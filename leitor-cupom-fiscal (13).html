@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Leitor de Cupom Fiscal — OCR</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#12161c;
+    --paper:#f7f4ec;
+    --paper-line:#e7e1d3;
+    --accent:#0a7d5a;      /* verde nota fiscal */
+    --accent-2:#f0b429;    /* amarelo sinalizador */
+    --danger:#c2410c;
+    --muted:#6b7280;
+    --card:#ffffff;
+    --radius:14px;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:var(--sans);
+    background:var(--ink);
+    color:#1a1f27;
+    min-height:100vh;
+    padding:16px;
+    padding-bottom:40px;
+  }
+  .wrap{max-width:640px;margin:0 auto}
+  header{
+    text-align:center;color:#fff;padding:10px 0 20px;
+  }
+  header h1{
+    margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em;
+  }
+  header p{margin:6px 0 0;font-size:13px;color:#9aa4b2}
+
+  .card{
+    background:var(--card);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+  }
+
+  /* Área de captura */
+  .capture-zone{
+    border:2px dashed var(--paper-line);
+    border-radius:12px;
+    background:var(--paper);
+    padding:28px 16px;
+    text-align:center;
+    position:relative;
+  }
+  .capture-zone .icon{font-size:40px;line-height:1}
+  .capture-zone p{margin:10px 0 4px;font-weight:600;color:#374151}
+  .capture-zone small{color:var(--muted)}
+
+  .btn-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  button, .btn{
+    appearance:none;border:0;cursor:pointer;
+    font-family:var(--sans);font-size:15px;font-weight:600;
+    padding:14px 16px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    flex:1 1 auto;transition:transform .05s ease, opacity .2s;
+  }
+  button:active{transform:scale(.98)}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-secondary{background:#eef1f4;color:#1a1f27}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--paper-line);flex:0 0 auto}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  input[type=file]{display:none}
+
+  /* Câmera ao vivo */
+  #cameraView{display:none;margin-top:12px}
+  video{width:100%;border-radius:12px;background:#000;display:block}
+  .cam-controls{display:flex;gap:10px;margin-top:10px}
+
+  /* Preview + canvas */
+  .preview-box{margin-top:12px;display:none}
+  .preview-box img,.preview-box canvas{
+    width:100%;border-radius:10px;display:block;border:1px solid var(--paper-line)
+  }
+  .tabs{display:flex;gap:6px;margin:10px 0}
+  .tab{
+    flex:1;text-align:center;padding:8px;border-radius:8px;font-size:13px;
+    background:#eef1f4;color:#475569;cursor:pointer;font-weight:600
+  }
+  .tab.active{background:var(--ink);color:#fff}
+
+  /* Ajustes */
+  details{margin-top:12px;border-top:1px solid var(--paper-line);padding-top:10px}
+  summary{font-weight:600;font-size:14px;cursor:pointer;color:#374151}
+  .ctrl{margin-top:12px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:13px;color:#475569;margin-bottom:4px}
+  .ctrl input[type=range]{width:100%}
+  .toggle-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{
+    padding:8px 12px;border-radius:20px;font-size:13px;font-weight:600;
+    background:#eef1f4;color:#475569;cursor:pointer;border:1px solid transparent
+  }
+  .chip.on{background:var(--accent);color:#fff}
+
+  /* Progresso */
+  .progress-wrap{display:none;margin-top:14px}
+  .bar{height:8px;background:#eef1f4;border-radius:99px;overflow:hidden}
+  .bar span{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+  .progress-label{font-size:13px;color:var(--muted);margin-top:6px;text-align:center}
+
+  /* Resultados */
+  #results{display:none}
+  .field{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    padding:11px 0;border-bottom:1px solid var(--paper-line)
+  }
+  .field:last-child{border-bottom:0}
+  .field .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;flex:0 0 42%}
+  .field .v{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right;word-break:break-word}
+  .field .v.empty{color:#cbd5e1;font-weight:400}
+
+  h3.section{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px}
+
+  table.items{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  table.items th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;padding:6px 4px;border-bottom:1px solid var(--paper-line)}
+  table.items td{padding:7px 4px;border-bottom:1px solid var(--paper-line);vertical-align:top}
+  table.items td.num{text-align:right;white-space:nowrap}
+
+  .raw{
+    font-family:var(--mono);font-size:12px;line-height:1.5;
+    background:var(--paper);border-radius:10px;padding:12px;
+    white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;
+    color:#374151;border:1px solid var(--paper-line)
+  }
+  .conf{
+    display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;
+    font-weight:700;font-family:var(--mono)
+  }
+  .conf.hi{background:#dcfce7;color:#166534}
+  .conf.mid{background:#fef9c3;color:#854d0e}
+  .conf.lo{background:#fee2e2;color:#991b1b}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none!important}
+
+  /* Histórico */
+  #historyCard{display:none}
+  .hist-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .hist-count{background:var(--accent);color:#fff;font-size:12px;font-weight:700;padding:2px 10px;border-radius:99px}
+  .hist-item{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:11px 0;border-bottom:1px solid var(--paper-line)
+  }
+  .hist-item:last-child{border-bottom:0}
+  .hist-info{min-width:0}
+  .hist-info .name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hist-info .meta{font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .hist-total{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--accent);white-space:nowrap}
+  .hist-del{
+    border:0;background:#fee2e2;color:#991b1b;width:30px;height:30px;border-radius:8px;
+    font-size:16px;line-height:1;cursor:pointer;flex:0 0 auto;padding:0
+  }
+  .export-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .btn-sheets{background:#0f9d58;color:#fff}
+  .btn-save{width:100%;margin-top:14px}
+  .saved-tag{
+    width:100%;margin-top:14px;text-align:center;font-weight:600;color:var(--accent);
+    background:#dcfce7;padding:12px;border-radius:11px;font-size:14px
+  }
+
+  /* Toast */
+  #toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+    background:#12161c;color:#fff;padding:13px 18px;border-radius:12px;font-size:14px;font-weight:600;
+    box-shadow:0 12px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.3s;z-index:99;
+    max-width:88%;text-align:center;line-height:1.4
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Leitor de Cupom Fiscal</h1>
+    <p>Fotografe o cupom e extraia os dados com OCR</p>
+  </header>
+
+  <!-- CAPTURA -->
+  <div class="card" id="captureCard">
+    <div class="capture-zone" id="dropZone">
+      <div class="icon">🧾</div>
+      <p>Fotografe ou envie o cupom</p>
+      <small>Boa luz, cupom plano e enquadrado preenchendo a tela</small>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" id="btnCamera">📷 Abrir câmera</button>
+      <label class="btn btn-secondary" for="fileInput">🖼️ Enviar foto</label>
+      <input type="file" id="fileInput" accept="image/*" capture="environment">
+    </div>
+
+    <!-- Câmera ao vivo -->
+    <div id="cameraView">
+      <video id="video" playsinline autoplay muted></video>
+      <div class="cam-controls">
+        <button class="btn-primary" id="btnShoot">Tirar foto</button>
+        <button class="btn-ghost" id="btnCloseCam">Fechar</button>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div class="preview-box" id="previewBox">
+      <div class="tabs">
+        <div class="tab active" data-view="original">Original</div>
+        <div class="tab" data-view="processed">Processada (OCR)</div>
+      </div>
+      <img id="previewImg" alt="original">
+      <canvas id="canvas" class="hidden"></canvas>
+
+      <details id="adjust">
+        <summary>Ajustes de imagem (melhore a leitura)</summary>
+        <div class="toggle-row">
+          <span class="chip on" data-flag="grayscale">Tons de cinza</span>
+          <span class="chip on" data-flag="threshold">Preto/branco</span>
+          <span class="chip on" data-flag="upscale">Ampliar 2x</span>
+          <span class="chip" data-flag="invert">Inverter</span>
+        </div>
+        <div class="ctrl">
+          <label>Contraste <span id="contrastVal">40</span></label>
+          <input type="range" id="contrast" min="0" max="120" value="40">
+        </div>
+        <div class="ctrl">
+          <label>Limiar P/B <span id="thresholdVal">auto</span></label>
+          <input type="range" id="thresholdSlider" min="0" max="255" value="128">
+          <label style="margin-top:6px"><span class="chip on" id="autoThresh" style="font-size:12px;padding:4px 10px">Limiar automático (Otsu)</span></label>
+        </div>
+      </details>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="btnRead">🔍 Ler cupom</button>
+        <button class="btn-ghost" id="btnReset">Trocar foto</button>
+      </div>
+
+      <div class="progress-wrap" id="progressWrap">
+        <div class="bar"><span id="bar"></span></div>
+        <div class="progress-label" id="progressLabel">Iniciando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTADOS -->
+  <div id="results">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 class="section" style="margin:0">Dados extraídos</h3>
+        <span class="conf" id="confBadge">—</span>
+      </div>
+      <div id="fields"></div>
+      <button class="btn-primary btn-save" id="btnSave">💾 Salvar na lista</button>
+      <div class="saved-tag hidden" id="savedTag">✓ Cupom salvo na lista</div>
+    </div>
+
+    <div class="card" id="itemsCard">
+      <h3 class="section">Itens do cupom</h3>
+      <div id="itemsWrap"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="section">Texto bruto reconhecido</h3>
+      <div class="raw" id="rawText"></div>
+      <div class="btn-row">
+        <button class="btn-secondary" id="btnCopy">📋 Copiar tudo</button>
+        <button class="btn-secondary" id="btnJson">⬇️ Baixar JSON</button>
+      </div>
+      <p class="hint">Dica: se algum campo saiu errado, tente de novo com mais luz, sem reflexo do flash, e mantendo o cupom bem plano. Cupom térmico apagado lê melhor no modo "Preto/branco" com limiar automático.</p>
+    </div>
+  </div>
+
+  <!-- HISTÓRICO -->
+  <div class="card" id="historyCard">
+    <div class="hist-head">
+      <h3 class="section" style="margin:0">Cupons salvos</h3>
+      <span class="hist-count" id="histCount">0</span>
+    </div>
+    <div id="histList"></div>
+    <div class="export-row">
+      <button class="btn-sheets" id="btnSheets">📊 Abrir no Google Sheets</button>
+      <button class="btn-secondary" id="btnCsv">Baixar CSV</button>
+      <button class="btn-secondary" id="btnXlsx">Baixar Excel</button>
+    </div>
+    <button class="btn-ghost" id="btnClear" style="width:100%;margin-top:10px">🗑️ Limpar lista</button>
+    <p class="hint">Os cupons ficam salvos neste aparelho/navegador. Em "Abrir no Google Sheets", os dados são copiados e o Google Sheets abre em nova aba — é só colar com Ctrl+V (ou Cmd+V) na célula A1. Os valores usam ponto como separador decimal para o Sheets somar corretamente.</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ---------------- Estado ---------------- */
+const els = {};
+['dropZone','btnCamera','fileInput','cameraView','video','btnShoot','btnCloseCam',
+ 'previewBox','previewImg','canvas','btnRead','btnReset','progressWrap','bar','progressLabel',
+ 'results','fields','itemsWrap','itemsCard','rawText','confBadge','btnCopy','btnJson',
+ 'btnSave','savedTag','historyCard','histCount','histList','btnSheets','btnCsv','btnXlsx','btnClear','toast',
+ 'contrast','contrastVal','thresholdSlider','thresholdVal','autoThresh','captureCard']
+ .forEach(id=>els[id]=document.getElementById(id));
+
+let sourceImage = null;   // HTMLImageElement original
+let stream = null;
+let lastResult = null;
+const flags = {grayscale:true, threshold:true, upscale:true, invert:false};
+let autoThreshold = true;
+
+/* ---------------- Câmera ao vivo ---------------- */
+els.btnCamera.addEventListener('click', async ()=>{
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} },
+      audio:false
+    });
+    els.video.srcObject = stream;
+    els.cameraView.style.display='block';
+    els.dropZone.style.display='none';
+  }catch(e){
+    alert('Não consegui abrir a câmera. Use "Enviar foto".\n\n'+e.message);
+  }
+});
+els.btnCloseCam.addEventListener('click', stopCamera);
+function stopCamera(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  els.cameraView.style.display='none';
+  els.dropZone.style.display='block';
+}
+els.btnShoot.addEventListener('click', ()=>{
+  const v=els.video;
+  const c=document.createElement('canvas');
+  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  loadImageFromDataURL(c.toDataURL('image/jpeg',0.95));
+  stopCamera();
+});
+
+/* ---------------- Upload ---------------- */
+els.fileInput.addEventListener('change', e=>{
+  const f=e.target.files[0];
+  if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>loadImageFromDataURL(ev.target.result);
+  r.readAsDataURL(f);
+});
+
+function loadImageFromDataURL(url){
+  const img=new Image();
+  img.onload=()=>{
+    sourceImage=img;
+    els.previewImg.src=url;
+    els.previewBox.style.display='block';
+    els.dropZone.style.display='none';
+    els.results.style.display='none';
+    processImage();
+  };
+  img.src=url;
+}
+
+/* ---------------- Abas preview ---------------- */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const v=t.dataset.view;
+    els.previewImg.classList.toggle('hidden', v!=='original');
+    els.canvas.classList.toggle('hidden', v!=='processed');
+  });
+});
+
+/* ---------------- Controles de ajuste ---------------- */
+document.querySelectorAll('.chip[data-flag]').forEach(ch=>{
+  ch.addEventListener('click',()=>{
+    const f=ch.dataset.flag;
+    flags[f]=!flags[f];
+    ch.classList.toggle('on',flags[f]);
+    processImage();
+  });
+});
+els.contrast.addEventListener('input',()=>{
+  els.contrastVal.textContent=els.contrast.value;
+  processImage();
+});
+els.thresholdSlider.addEventListener('input',()=>{
+  autoThreshold=false;
+  els.autoThresh.classList.remove('on');
+  els.thresholdVal.textContent=els.thresholdSlider.value;
+  processImage();
+});
+els.autoThresh.addEventListener('click',()=>{
+  autoThreshold=!autoThreshold;
+  els.autoThresh.classList.toggle('on',autoThreshold);
+  els.thresholdVal.textContent=autoThreshold?'auto':els.thresholdSlider.value;
+  processImage();
+});
+
+/* ---------------- Pré-processamento (o coração da precisão) ---------------- */
+function processImage(){
+  if(!sourceImage) return;
+  const canvas=els.canvas;
+  const ctx=canvas.getContext('2d');
+
+  let scale=1;
+  const maxDim=Math.max(sourceImage.width, sourceImage.height);
+  // Amplia imagens pequenas (Tesseract prefere texto grande ~ 30px de altura de linha)
+  if(flags.upscale){
+    scale = maxDim < 1600 ? 2 : 1.3;
+  }
+  // Limita para não estourar memória
+  if(maxDim*scale > 3200) scale = 3200/maxDim;
+
+  canvas.width=Math.round(sourceImage.width*scale);
+  canvas.height=Math.round(sourceImage.height*scale);
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(sourceImage,0,0,canvas.width,canvas.height);
+
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data;
+  const contrast=parseInt(els.contrast.value,10);
+  const cf=(259*(contrast+255))/(255*(259-contrast)); // fator de contraste
+
+  // 1) Cinza + contraste
+  const gray=new Uint8ClampedArray(canvas.width*canvas.height);
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    let g = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    g = cf*(g-128)+128;
+    if(flags.invert) g=255-g;
+    g=Math.max(0,Math.min(255,g));
+    gray[p]=g;
+  }
+
+  // 2) Limiar (Otsu automático ou manual)
+  let thresh=parseInt(els.thresholdSlider.value,10);
+  if(flags.threshold && autoThreshold){
+    thresh=otsu(gray);
+    els.thresholdVal.textContent='auto ('+thresh+')';
+  }
+
+  // 3) Escreve de volta
+  for(let p=0,i=0;p<gray.length;p++,i+=4){
+    let val=gray[p];
+    if(flags.threshold){
+      val = val<thresh ? 0 : 255;
+    } else if(!flags.grayscale){
+      // mantém original? já convertemos; se cinza desligado e sem threshold, restaura cor não é trivial -> deixa cinza
+    }
+    d[i]=d[i+1]=d[i+2]=val;
+    d[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function otsu(gray){
+  const hist=new Array(256).fill(0);
+  for(let i=0;i<gray.length;i++) hist[gray[i]]++;
+  const total=gray.length;
+  let sum=0; for(let i=0;i<256;i++) sum+=i*hist[i];
+  let sumB=0,wB=0,max=0,thresh=128;
+  for(let i=0;i<256;i++){
+    wB+=hist[i]; if(wB===0) continue;
+    const wF=total-wB; if(wF===0) break;
+    sumB+=i*hist[i];
+    const mB=sumB/wB, mF=(sum-sumB)/wF;
+    const between=wB*wF*(mB-mF)*(mB-mF);
+    if(between>max){max=between;thresh=i;}
+  }
+  return thresh;
+}
+
+/* ---------------- OCR ---------------- */
+els.btnRead.addEventListener('click', runOCR);
+els.btnReset.addEventListener('click', ()=>{
+  sourceImage=null;
+  els.previewBox.style.display='none';
+  els.dropZone.style.display='block';
+  els.results.style.display='none';
+  els.fileInput.value='';
+});
+
+async function runOCR(){
+  if(!sourceImage) return;
+  els.btnRead.disabled=true;
+  els.progressWrap.style.display='block';
+  setProgress(0,'Carregando motor de OCR…');
+
+  try{
+    const worker=await Tesseract.createWorker('por',1,{
+      logger:m=>{
+        if(m.status==='recognizing text'){
+          setProgress(m.progress*100,'Reconhecendo texto… '+Math.round(m.progress*100)+'%');
+        }else if(m.status){
+          setProgress(null, traduzStatus(m.status));
+        }
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+      preserve_interword_spaces:'1',
+    });
+
+    const { data } = await worker.recognize(els.canvas);
+    await worker.terminate();
+
+    setProgress(100,'Concluído');
+    renderResults(data);
+  }catch(e){
+    setProgress(null,'Erro: '+e.message);
+    alert('Falha no OCR: '+e.message);
+  }finally{
+    els.btnRead.disabled=false;
+    setTimeout(()=>els.progressWrap.style.display='none',900);
+  }
+}
+
+function traduzStatus(s){
+  const map={
+    'loading tesseract core':'Carregando núcleo…',
+    'initializing tesseract':'Inicializando…',
+    'loading language traineddata':'Baixando idioma (português)…',
+    'initializing api':'Preparando…',
+    'recognizing text':'Reconhecendo texto…'
+  };
+  return map[s]||s;
+}
+function setProgress(pct,label){
+  if(pct!==null) els.bar.style.width=pct+'%';
+  if(label) els.progressLabel.textContent=label;
+}
+
+/* ---------------- Extração de dados do cupom ---------------- */
+function extractData(text){
+  const t=text.replace(/\u00a0/g,' ');
+  const T=t.toUpperCase();
+  const out={};
+
+  // CNPJ
+  const cnpj=t.match(/(\d{2}[.\s]?\d{3}[.\s]?\d{3}[\/\s]?\d{4}[-\s]?\d{2})/);
+  if(cnpj) out.cnpj=normalizaCNPJ(cnpj[1]);
+
+  // CPF (do consumidor)
+  const cpf=t.match(/CPF[:\s]*?(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2})/i);
+  if(cpf) out.cpf=cpf[1].replace(/\s/g,'');
+
+  // Chave de acesso NFC-e (44 dígitos, pode vir em grupos de 4)
+  const chaveMatch=t.match(/(\d[\s.]?){44}/);
+  if(chaveMatch){
+    const only=chaveMatch[0].replace(/\D/g,'');
+    if(only.length>=44) out.chaveAcesso=only.slice(0,44).replace(/(.{4})/g,'$1 ').trim();
+  }
+
+  // Data e hora
+  const data=t.match(/(\d{2}\/\d{2}\/\d{2,4})/);
+  if(data) out.data=data[1];
+  const hora=t.match(/(\d{2}:\d{2}(?::\d{2})?)/);
+  if(hora) out.hora=hora[1];
+
+  // Número do cupom / NFC-e
+  const num=t.match(/(?:N[º°O.]?\s*|N[UÚ]MERO[:\s]*|EXTRATO N[º°O.]?\s*)(\d{3,})/i);
+  if(num) out.numero=num[1];
+
+  // Nome do estabelecimento: geralmente 1ª ou 2ª linha não vazia
+  const linhas=t.split('\n').map(l=>l.trim()).filter(l=>l.length>2);
+  if(linhas.length){
+    const cand=linhas.find(l=>/[A-Za-zÀ-ÿ]/.test(l) && !/^\d/.test(l) && l.length>4);
+    if(cand) out.estabelecimento=cand;
+  }
+
+  // Valores (pega o maior "TOTAL")
+  out.valorTotal = pegaValor(t, /(?:VALOR\s+TOTAL|TOTAL\s+R\$|TOTAL\s+A?\s*PAGAR|VL\.?\s*TOTAL|TOTAL)[^\d\-]*?(\d{1,3}(?:\.\d{3})*,\d{2})/gi);
+  out.valorPago  = pegaValor(t, /(?:VALOR\s+PAGO|PAGO|DINHEIRO|CART[AÃ]O|PIX|D[ÉE]BITO|CR[ÉE]DITO)[^\d\-]*?(\d{1,3}(?:\.\d{3})*,\d{2})/gi);
+  out.troco      = pegaValor(t, /TROCO[^\d\-]*?(\d{1,3}(?:\.\d{3})*,\d{2})/gi);
+
+  // Forma de pagamento
+  const formas=[];
+  if(/PIX/i.test(T)) formas.push('Pix');
+  if(/CR[ÉE]DITO/i.test(T)) formas.push('Crédito');
+  if(/D[ÉE]BITO/i.test(T)) formas.push('Débito');
+  if(/DINHEIRO/i.test(T)) formas.push('Dinheiro');
+  if(/CART[AÃ]O/i.test(T) && !formas.length) formas.push('Cartão');
+  if(formas.length) out.pagamento=[...new Set(formas)].join(', ');
+
+  // Itens
+  out.itens=extraiItens(t);
+
+  return out;
+}
+
+function pegaValor(t,regex){
+  let m,best=null;
+  while((m=regex.exec(t))!==null){
+    const v=parseFloat(m[1].replace(/\./g,'').replace(',','.'));
+    if(best===null || v>best) best=v;
+  }
+  return best!==null ? best.toFixed(2).replace('.',',') : null;
+}
+
+function extraiItens(t){
+  const itens=[];
+  const linhas=t.split('\n');
+  // Padrão comum: [cod] DESCRIÇÃO ... qtd x unit = total  OU  DESCRIÇÃO ... total
+  const reValor=/(\d{1,3}(?:\.\d{3})*,\d{2})/;
+  const reQtdUnit=/(\d+(?:[,.]\d{1,3})?)\s*[xX]\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
+  for(const raw of linhas){
+    const l=raw.trim();
+    if(l.length<5) continue;
+    if(/TOTAL|TROCO|SUBTOTAL|VALOR\s+PAGO|CNPJ|CPF|CONSUMIDOR|OBRIGAD|TRIBUT|QTD|DESCRI/i.test(l)) continue;
+    // precisa ter texto e um valor monetário
+    const temTexto=/[A-Za-zÀ-ÿ]{3,}/.test(l);
+    const val=l.match(reValor);
+    if(!temTexto || !val) continue;
+
+    const qu=l.match(reQtdUnit);
+    // descrição = tudo antes do primeiro número relevante
+    let desc=l.replace(/^\d{3,}\s*/,'')            // remove código no início
+             .replace(reQtdUnit,'')
+             .replace(reValor,'')
+             .replace(/\b(UN|KG|G|L|ML|PC|CX|X)\b/gi,'')
+             .replace(/[|]/g,' ')
+             .replace(/\s{2,}/g,' ')
+             .trim();
+    if(desc.length<2) continue;
+    itens.push({
+      descricao:desc,
+      qtd: qu?qu[1]:null,
+      unit: qu?qu[2]:null,
+      total: val[1]
+    });
+  }
+  return itens;
+}
+
+function normalizaCNPJ(s){
+  const d=s.replace(/\D/g,'');
+  if(d.length!==14) return s.trim();
+  return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5');
+}
+
+/* ---------------- Render ---------------- */
+function renderResults(data){
+  const dados=extractData(data.text);
+  const conf=Math.round(data.confidence);
+  lastResult={ confianca:conf, campos:dados, textoBruto:data.text };
+
+  // reabilita o botão de salvar para o novo cupom
+  els.btnSave.classList.remove('hidden');
+  els.savedTag.classList.add('hidden');
+  els.btnSave.disabled=false;
+
+  // badge de confiança
+  const badge=els.confBadge;
+  badge.textContent='Confiança '+conf+'%';
+  badge.className='conf '+(conf>=80?'hi':conf>=60?'mid':'lo');
+
+  const rows=[
+    ['Estabelecimento', dados.estabelecimento],
+    ['CNPJ', dados.cnpj],
+    ['Data', dados.data],
+    ['Hora', dados.hora],
+    ['Nº do cupom', dados.numero],
+    ['Valor total', dados.valorTotal?('R$ '+dados.valorTotal):null],
+    ['Valor pago', dados.valorPago?('R$ '+dados.valorPago):null],
+    ['Troco', dados.troco?('R$ '+dados.troco):null],
+    ['Pagamento', dados.pagamento],
+    ['CPF na nota', dados.cpf],
+    ['Chave de acesso', dados.chaveAcesso],
+  ];
+  els.fields.innerHTML=rows.map(([k,v])=>`
+    <div class="field">
+      <div class="k">${k}</div>
+      <div class="v ${v?'':'empty'}">${v?escapeHtml(v):'não encontrado'}</div>
+    </div>`).join('');
+
+  // itens
+  if(dados.itens && dados.itens.length){
+    els.itemsCard.style.display='block';
+    els.itemsWrap.innerHTML=`
+      <table class="items">
+        <thead><tr><th>Descrição</th><th class="num">Qtd</th><th class="num">Unit.</th><th class="num">Total</th></tr></thead>
+        <tbody>${dados.itens.map(it=>`
+          <tr>
+            <td>${escapeHtml(it.descricao)}</td>
+            <td class="num">${it.qtd||'—'}</td>
+            <td class="num">${it.unit||'—'}</td>
+            <td class="num">${it.total}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }else{
+    els.itemsCard.style.display='none';
+  }
+
+  els.rawText.textContent=data.text||'(vazio)';
+  els.results.style.display='block';
+  els.results.scrollIntoView({behavior:'smooth'});
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------------- Copiar / exportar ---------------- */
+els.btnCopy.addEventListener('click', ()=>{
+  if(!lastResult) return;
+  const d=lastResult.campos;
+  let txt=`CUPOM FISCAL — dados extraídos\n`;
+  txt+=`Confiança OCR: ${lastResult.confianca}%\n\n`;
+  txt+=`Estabelecimento: ${d.estabelecimento||'-'}\n`;
+  txt+=`CNPJ: ${d.cnpj||'-'}\n`;
+  txt+=`Data: ${d.data||'-'}  Hora: ${d.hora||'-'}\n`;
+  txt+=`Nº: ${d.numero||'-'}\n`;
+  txt+=`Valor total: R$ ${d.valorTotal||'-'}\n`;
+  txt+=`Pagamento: ${d.pagamento||'-'}\n`;
+  txt+=`Chave: ${d.chaveAcesso||'-'}\n\n`;
+  if(d.itens&&d.itens.length){
+    txt+=`ITENS:\n`;
+    d.itens.forEach(it=>{txt+=`- ${it.descricao} | ${it.qtd||''} ${it.unit?('x '+it.unit):''} = ${it.total}\n`;});
+  }
+  txt+=`\n--- TEXTO BRUTO ---\n${lastResult.textoBruto}`;
+  navigator.clipboard.writeText(txt).then(()=>{
+    els.btnCopy.textContent='✓ Copiado!';
+    setTimeout(()=>els.btnCopy.textContent='📋 Copiar tudo',1600);
+  });
+});
+
+els.btnJson.addEventListener('click', ()=>{
+  if(!lastResult) return;
+  const blob=new Blob([JSON.stringify(lastResult,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='cupom-fiscal.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ================================================================
+   ARMAZENAMENTO + HISTÓRICO + EXPORTAÇÃO GOOGLE SHEETS
+   ================================================================ */
+const STORE_KEY='cupons_fiscais_v1';
+
+function loadReceipts(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY))||[]; }
+  catch(e){ return []; }
+}
+function persist(list){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(list)); }
+  catch(e){ toast('Não consegui salvar (armazenamento cheio ou bloqueado).'); }
+}
+
+/* Salvar cupom lido */
+els.btnSave.addEventListener('click', ()=>{
+  if(!lastResult) return;
+  const d=lastResult.campos;
+  const receipt={
+    id:'c_'+Date.now(),
+    savedAt:new Date().toISOString(),
+    confianca:lastResult.confianca,
+    estabelecimento:d.estabelecimento||'',
+    cnpj:d.cnpj||'', cpf:d.cpf||'', chaveAcesso:d.chaveAcesso||'',
+    data:d.data||'', hora:d.hora||'', numero:d.numero||'',
+    valorTotal:d.valorTotal||'', valorPago:d.valorPago||'', troco:d.troco||'',
+    pagamento:d.pagamento||'',
+    itens:d.itens||[],
+    textoBruto:lastResult.textoBruto||''
+  };
+  const list=loadReceipts();
+  list.push(receipt);
+  persist(list);
+  renderHistory();
+  els.btnSave.disabled=true;
+  els.btnSave.classList.add('hidden');
+  els.savedTag.classList.remove('hidden');
+  toast('Cupom salvo! Já são '+list.length+' na lista.');
+});
+
+/* Render do histórico */
+function renderHistory(){
+  const list=loadReceipts();
+  els.histCount.textContent=list.length;
+  if(!list.length){ els.historyCard.style.display='none'; return; }
+  els.historyCard.style.display='block';
+  els.histList.innerHTML=list.slice().reverse().map(r=>`
+    <div class="hist-item">
+      <div class="hist-info">
+        <div class="name">${escapeHtml(r.estabelecimento||'Cupom sem nome')}</div>
+        <div class="meta">${escapeHtml([r.data,r.hora].filter(Boolean).join(' ')||'sem data')} · ${r.itens.length} ${r.itens.length===1?'item':'itens'}</div>
+      </div>
+      <div class="hist-total">${r.valorTotal?('R$ '+r.valorTotal):'—'}</div>
+      <button class="hist-del" data-id="${r.id}" title="Remover">×</button>
+    </div>`).join('');
+  els.histList.querySelectorAll('.hist-del').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const rest=loadReceipts().filter(x=>x.id!==b.dataset.id);
+      persist(rest); renderHistory();
+      toast('Cupom removido.');
+    });
+  });
+}
+
+els.btnClear.addEventListener('click', ()=>{
+  if(!loadReceipts().length) return;
+  if(confirm('Apagar todos os cupons salvos? Esta ação não pode ser desfeita.')){
+    persist([]); renderHistory(); toast('Lista limpa.');
+  }
+});
+
+/* -------- Montagem das tabelas -------- */
+const HEADER=['Data','Hora','Estabelecimento','CNPJ','Nº Cupom','Valor Total','Valor Pago',
+  'Troco','Pagamento','CPF','Chave de Acesso','Qtd Itens','Confiança %','Salvo em'];
+
+function toNum(s){ // "1.234,56" -> "1234.56"  (ponto decimal, sem milhar)
+  if(!s) return '';
+  return String(s).replace(/\./g,'').replace(',','.');
+}
+function fmtSaved(iso){
+  try{ const d=new Date(iso); return d.toLocaleString('pt-BR'); }catch(e){ return iso; }
+}
+function summaryRows(){
+  return loadReceipts().map(r=>[
+    r.data, r.hora, r.estabelecimento, r.cnpj, r.numero,
+    toNum(r.valorTotal), toNum(r.valorPago), toNum(r.troco),
+    r.pagamento, r.cpf, r.chaveAcesso, r.itens.length, r.confianca, fmtSaved(r.savedAt)
+  ]);
+}
+function itemRows(){
+  const rows=[['Cupom','Data','Estabelecimento','Descrição','Qtd','Unitário','Total']];
+  loadReceipts().forEach(r=>{
+    const nome=r.estabelecimento||'Cupom';
+    (r.itens||[]).forEach(it=>{
+      rows.push([nome, r.data, r.estabelecimento, it.descricao, it.qtd||'', toNum(it.unit), toNum(it.total)]);
+    });
+  });
+  return rows;
+}
+
+/* -------- Google Sheets: copia TSV + abre planilha nova -------- */
+els.btnSheets.addEventListener('click', ()=>{
+  const list=loadReceipts();
+  if(!list.length){ toast('Nenhum cupom salvo ainda.'); return; }
+  const rows=[HEADER, ...summaryRows()];
+  const tsv=rows.map(r=>r.map(c=>String(c==null?'':c).replace(/\t/g,' ').replace(/\n/g,' ')).join('\t')).join('\n');
+  // abre a planilha primeiro (dentro do gesto do clique)
+  const win=window.open('https://sheets.new','_blank');
+  copyText(tsv).then(()=>{
+    toast('Dados copiados! Na planilha que abriu, clique na célula A1 e cole com Ctrl+V (Cmd+V).');
+  }).catch(()=>{
+    showManualCopy(tsv);
+  });
+  if(!win){ toast('Libere o pop-up e tente de novo, ou use "Baixar CSV".'); }
+});
+
+/* -------- CSV (Google Sheets importa direto) -------- */
+els.btnCsv.addEventListener('click', ()=>{
+  const list=loadReceipts();
+  if(!list.length){ toast('Nenhum cupom salvo ainda.'); return; }
+  const rows=[HEADER, ...summaryRows()];
+  const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+  download('\ufeff'+csv, 'cupons-fiscais.csv', 'text/csv;charset=utf-8');
+  toast('CSV baixado. No Google Sheets: Arquivo → Importar → Enviar.');
+});
+function csvCell(v){
+  v=String(v==null?'':v);
+  return /[",\r\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+}
+
+/* -------- Excel (.xlsx) com 2 abas: Cupons + Itens -------- */
+els.btnXlsx.addEventListener('click', ()=>{
+  const list=loadReceipts();
+  if(!list.length){ toast('Nenhum cupom salvo ainda.'); return; }
+  const wb=XLSX.utils.book_new();
+  // aba Cupons (converte valores numéricos em número de verdade)
+  const summ=[HEADER, ...summaryRows().map(row=>row.map((c,i)=>{
+    if([5,6,7].includes(i) && c!=='') return Number(c); // valores
+    if([11,12].includes(i) && c!=='') return Number(c); // qtd itens / confiança
+    return c;
+  }))];
+  const ws1=XLSX.utils.aoa_to_sheet(summ);
+  ws1['!cols']=[{wch:10},{wch:8},{wch:26},{wch:20},{wch:10},{wch:12},{wch:12},{wch:10},{wch:14},{wch:16},{wch:50},{wch:9},{wch:11},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Cupons');
+  // aba Itens
+  const its=itemRows();
+  if(its.length>1){
+    const ws2=XLSX.utils.aoa_to_sheet(its.map((row,ri)=> ri===0?row:row.map((c,i)=> ([5,6].includes(i)&&c!=='')?Number(c):c )));
+    ws2['!cols']=[{wch:24},{wch:10},{wch:24},{wch:34},{wch:8},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Itens');
+  }
+  XLSX.writeFile(wb, 'cupons-fiscais.xlsx');
+  toast('Excel baixado. Abra no Google Sheets ou Excel.');
+});
+
+/* -------- utilidades -------- */
+function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((res,rej)=>{
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.top='0'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+    ok?res():rej(new Error('copy falhou'));
+  });
+}
+function showManualCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text;
+  ta.style.cssText='position:fixed;inset:10% 5%;width:90%;height:70%;z-index:100;padding:10px;font-family:monospace;font-size:12px';
+  document.body.appendChild(ta); ta.select();
+  toast('Copie o texto selecionado (Ctrl+C) e cole no Google Sheets. Toque fora para fechar.');
+  const close=()=>{ ta.remove(); document.removeEventListener('click',close); };
+  setTimeout(()=>document.addEventListener('click',close),300);
+}
+function download(content, filename, type){
+  const blob=new Blob([content],{type});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
+let toastTimer;
+function toast(msg){
+  els.toast.textContent=msg;
+  els.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>els.toast.classList.remove('show'),4200);
+}
+
+/* Carrega histórico ao abrir */
+renderHistory();
+</script>
+</body>
+</html>
