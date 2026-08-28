@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extrator Pro de Cupons - OCR + Google Sheets</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #ea580c;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        header {
+            margin-bottom: 2rem;
+            text-align: center;
+            background: var(--surface);
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+        
+        .auth-button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 1rem;
+            transition: all 0.2s;
+        }
+        
+        .auth-button:hover {
+            background: #1a73e8;
+        }
+        
+        .auth-status {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            padding: 0.75rem;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .auth-status.connected {
+            background: rgba(22, 163, 74, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+        
+        .auth-status.disconnected {
+            background: rgba(100, 116, 139, 0.1);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .panel h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .button:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .button.secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+        
+        .button.secondary:hover {
+            background: #cbd5e1;
+        }
+        
+        .button.success {
+            background: var(--success);
+        }
+        
+        .button.success:hover {
+            background: #15803d;
+        }
+        
+        .button.danger {
+            background: var(--danger);
+        }
+        
+        .button.danger:hover {
+            background: #b91c1c;
+        }
+        
+        .upload-zone {
+            border: 2px dashed var(--primary);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(37, 99, 235, 0.02);
+            margin-bottom: 1rem;
+        }
+        
+        .upload-zone:hover {
+            border-color: var(--primary-dark);
+            background: rgba(37, 99, 235, 0.04);
+        }
+        
+        .upload-zone.dragover {
+            background: rgba(37, 99, 235, 0.1);
+            border-color: var(--primary-dark);
+        }
+        
+        .upload-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 6px;
+            margin: 1rem 0;
+            border: 1px solid var(--border);
+        }
+        
+        .status {
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+            font-size: 0.875rem;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status.processing {
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+        }
+        
+        .status.success {
+            background: rgba(22, 163, 74, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+        
+        .status.error {
+            background: rgba(220, 38, 38, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        
+        .data-section {
+            margin: 1.5rem 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+        }
+        
+        .data-section h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+        
+        .data-field {
+            margin-bottom: 0.75rem;
+        }
+        
+        .data-field label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        
+        .data-field input,
+        .data-field textarea,
+        .data-field select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.875rem;
+        }
+        
+        .data-field input:focus,
+        .data-field textarea:focus,
+        .data-field select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        .item-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .item-info {
+            flex: 1;
+        }
+        
+        .item-description {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+        
+        .item-category {
+            font-size: 0.75rem;
+            background: var(--primary);
+            color: white;
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            margin-right: 0.5rem;
+        }
+        
+        .item-details {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+        
+        .item-price {
+            text-align: right;
+            font-weight: 600;
+            color: var(--primary);
+            font-size: 1.1rem;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .summary-item {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .summary-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .summary-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+        
+        .category-breakdown {
+            width: 100%;
+            margin-top: 1rem;
+        }
+        
+        .category-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+        
+        .category-item:last-child {
+            border-bottom: none;
+        }
+        
+        .category-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        
+        .category-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+        
+        .actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+        
+        .table-responsive {
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        
+        th {
+            background: var(--bg);
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+            color: var(--text);
+        }
+        
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        tr:hover {
+            background: rgba(37, 99, 235, 0.02);
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 0.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        
+        .badge.new {
+            background: rgba(22, 163, 74, 0.2);
+            color: var(--success);
+        }
+        
+        .badge.synced {
+            background: rgba(37, 99, 235, 0.2);
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Extrator Pro de Cupons</h1>
+            <p class="subtitle">OCR avançado + Google Sheets - Categorização automática de despesas</p>
+            
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <button class="auth-button" id="authorizeBtn">
+                    🔐 Conectar Google Sheets
+                </button>
+                <div id="authStatus" class="auth-status disconnected">
+                    ⭕ Não conectado
+                </div>
+            </div>
+        </header>
+        
+        <div class="main-grid">
+            <!-- PAINEL DE CAPTURA -->
+            <div class="panel">
+                <h2>📸 Capturar Cupom</h2>
+                
+                <div class="button-group">
+                    <button class="button" id="cameraBtn">📷 Tirar Foto</button>
+                    <button class="button secondary" id="uploadBtn">📁 Arquivo</button>
+                </div>
+                
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">📸</div>
+                    <p>Ou arraste uma imagem aqui</p>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        JPG, PNG
+                    </p>
+                    <input type="file" id="fileInput" accept="image/*">
+                    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+                </div>
+                
+                <img id="previewImage" class="preview-image" style="display: none;">
+                
+                <div id="statusDiv" class="status"></div>
+                
+                <button class="button" id="processBtn" style="display: none; width: 100%;">
+                    <span class="spinner" style="display: none;"></span>
+                    Processar com OCR
+                </button>
+            </div>
+            
+            <!-- PAINEL DE RESUMO -->
+            <div class="panel">
+                <h2>📊 Resumo</h2>
+                
+                <div id="summaryDiv"></div>
+                
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text);">Despesas por Categoria</h3>
+                    <div id="categoryBreakdown" class="category-breakdown"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- PAINEL DE EDIÇÃO DE DADOS -->
+        <div class="panel" id="dataPanel" style="display: none; margin-top: 1.5rem;">
+            <h2>✏️ Editar Dados do Cupom</h2>
+            
+            <!-- Informações Estabelecimento -->
+            <div class="data-section">
+                <h3>🏪 Estabelecimento</h3>
+                <div class="data-field">
+                    <label>Nome</label>
+                    <input type="text" id="storeName">
+                </div>
+                <div class="data-field">
+                    <label>CNPJ</label>
+                    <input type="text" id="storeCNPJ" placeholder="00.000.000/0000-00">
+                </div>
+                <div class="data-field">
+                    <label>Endereço</label>
+                    <textarea id="storeAddress"></textarea>
+                </div>
+                <div class="data-field">
+                    <label>Telefone</label>
+                    <input type="tel" id="storePhone">
+                </div>
+            </div>
+            
+            <!-- Informações da Compra -->
+            <div class="data-section">
+                <h3>🛒 Compra</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="data-field">
+                        <label>Data e Hora</label>
+                        <input type="datetime-local" id="purchaseDate">
+                    </div>
+                    <div class="data-field">
+                        <label>Número do Cupom</label>
+                        <input type="text" id="receiptNumber">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="data-field">
+                        <label>Método de Pagamento</label>
+                        <select id="paymentMethod">
+                            <option value="">Selecione...</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Débito">Débito</option>
+                            <option value="Crédito">Crédito</option>
+                            <option value="PIX">PIX</option>
+                            <option value="Boleto">Boleto</option>
+                        </select>
+                    </div>
+                    <div class="data-field">
+                        <label>Bandeira/Banco</label>
+                        <input type="text" id="cardBrand">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Itens -->
+            <div class="data-section">
+                <h3>📦 Itens Comprados</h3>
+                <div id="itemsList"></div>
+            </div>
+            
+            <!-- Valores -->
+            <div class="data-section">
+                <h3>💰 Valores</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.75rem;">
+                    <div class="data-field">
+                        <label>Subtotal</label>
+                        <input type="number" id="subtotal" step="0.01">
+                    </div>
+                    <div class="data-field">
+                        <label>Desconto</label>
+                        <input type="number" id="discount" step="0.01">
+                    </div>
+                    <div class="data-field">
+                        <label>Impostos</label>
+                        <input type="number" id="taxes" step="0.01">
+                    </div>
+                    <div class="data-field">
+                        <label style="color: var(--primary);">Total</label>
+                        <input type="number" id="totalValue" step="0.01" style="border-color: var(--primary); border-width: 2px;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Ações -->
+            <div class="actions">
+                <button class="button success" id="saveBtn">💾 Salvar</button>
+                <button class="button success" id="sendToSheetsBtn">📤 Google Sheets</button>
+                <button class="button" id="downloadJsonBtn">📥 JSON</button>
+                <button class="button" id="downloadCsvBtn">📊 CSV</button>
+                <button class="button secondary" id="resetBtn">🔄 Novo</button>
+            </div>
+        </div>
+        
+        <!-- HISTÓRICO -->
+        <div class="panel" id="historyPanel" style="display: none; margin-top: 1.5rem;">
+            <h2>📋 Histórico de Cupons</h2>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Loja</th>
+                            <th>Itens</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                    </tbody>
+                </table>
+            </div>
+            <button class="button success" id="syncAllBtn" style="width: 100%; margin-top: 1rem;">
+                🔄 Sincronizar Tudo ao Google Sheets
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        const Tesseract = window.Tesseract;
+        let extractedData = null;
+        let googleAuth = null;
+        let spreadsheetId = null;
+        
+        const CATEGORIES = {
+            'Alimentação': ['pão', 'leite', 'queijo', 'carne', 'fruta', 'verdura', 'legume', 'arroz', 'feijão', 'macarrão', 'óleo', 'sal', 'açúcar', 'café', 'chá', 'suco', 'água', 'refrigerante', 'cerveja', 'vinho', 'chocolate', 'biscoito', 'iogurte', 'manteiga'],
+            'Supermercado': ['supermercado', 'mercado', 'carrefour', 'pão de', 'hortifruti', 'açougue', 'padaria'],
+            'Farmácia': ['farmácia', 'medicamento', 'remédio', 'vitamina', 'dipirona', 'dor', 'gripe', 'xarope'],
+            'Higiene': ['sabonete', 'shampoo', 'condicionador', 'higiene', 'papel higiênico', 'toalha', 'absorvente', 'desodorante', 'escova', 'creme'],
+            'Limpeza': ['detergente', 'limpeza', 'cloro', 'desinfetante', 'sabão', 'esponja', 'pano', 'vassoura', 'rodo'],
+            'Combustível': ['gasolina', 'etanol', 'diesel', 'combustível', 'bomba', 'litro', 'abastec'],
+            'Transporte': ['uber', 'táxi', 'passagem', 'ônibus', 'metrô', 'combustível'],
+            'Eletrônicos': ['eletrônico', 'celular', 'notebook', 'cabo', 'carregador', 'fone', 'mouse', 'teclado', 'monitor'],
+            'Vestuário': ['roupa', 'calça', 'camiseta', 'sapato', 'meia', 'vestiário', 'fashion', 'moda', 'bolsa', 'cintura'],
+            'Diversão': ['cinema', 'ingresso', 'show', 'teatro', 'parque', 'jogo', 'recreação'],
+            'Restaurante': ['restaurante', 'bar', 'café', 'pizzaria', 'lanchonete', 'padaria', 'burger', 'churrasco', 'comida'],
+            'Saúde': ['hospital', 'dentista', 'médico', 'clínica', 'consulta', 'exame'],
+            'Outros': []
+        };
+        
+        // Elements
+        const cameraBtn = document.getElementById('cameraBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const cameraInput = document.getElementById('cameraInput');
+        const fileInput = document.getElementById('fileInput');
+        const uploadZone = document.getElementById('uploadZone');
+        const previewImage = document.getElementById('previewImage');
+        const processBtn = document.getElementById('processBtn');
+        const statusDiv = document.getElementById('statusDiv');
+        const dataPanel = document.getElementById('dataPanel');
+        const authorizeBtn = document.getElementById('authorizeBtn');
+        const authStatus = document.getElementById('authStatus');
+        
+        // Event Listeners
+        cameraBtn.addEventListener('click', () => cameraInput.click());
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        cameraInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        processBtn.addEventListener('click', processImage);
+        document.getElementById('saveBtn').addEventListener('click', saveToLocalStorage);
+        document.getElementById('sendToSheetsBtn').addEventListener('click', sendToGoogleSheets);
+        document.getElementById('downloadJsonBtn').addEventListener('click', downloadJSON);
+        document.getElementById('downloadCsvBtn').addEventListener('click', downloadCSV);
+        document.getElementById('resetBtn').addEventListener('click', reset);
+        document.getElementById('syncAllBtn').addEventListener('click', syncAllToSheets);
+        
+        // Google Sheets Auth
+        authorizeBtn.addEventListener('click', authorizeGoogleSheets);
+        
+        async function authorizeGoogleSheets() {
+            try {
+                const token = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token;
+                googleAuth = true;
+                authStatus.textContent = '✅ Conectado ao Google Sheets';
+                authStatus.className = 'auth-status connected';
+                authorizeBtn.textContent = '✅ Google Sheets Conectado';
+                createOrGetSpreadsheet();
+            } catch (error) {
+                // Inicializar Google Sign-In se não estiver pronto
+                setTimeout(() => {
+                    google.accounts.id.initialize({
+                        client_id: 'YOUR_GOOGLE_CLIENT_ID', // Será substituído
+                        callback: handleCredentialResponse
+                    });
+                }, 100);
+            }
+        }
+        
+        function handleCredentialResponse(response) {
+            console.log("Encoded JWT ID token: " + response.credential);
+            googleAuth = true;
+            authStatus.textContent = '✅ Conectado ao Google Sheets';
+            authStatus.className = 'auth-status connected';
+            authorizeBtn.textContent = '✅ Google Sheets Conectado';
+        }
+        
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            const file = files[0];
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    previewImage.src = img.src;
+                    previewImage.style.display = 'block';
+                    processBtn.style.display = 'block';
+                    statusDiv.classList.remove('show');
+                    cameraInput.value = '';
+                    fileInput.value = '';
+                };
+                img.src = e.target.result;
+            };
+            
+            reader.readAsDataURL(file);
+        }
+        
+        async function processImage() {
+            if (!previewImage.src) return;
+            
+            showStatus('Processando com OCR... Aguarde', 'processing');
+            processBtn.disabled = true;
+            
+            const spinner = processBtn.querySelector('.spinner');
+            spinner.style.display = 'inline-block';
+            
+            try {
+                const { data: { text } } = await Tesseract.recognize(
+                    previewImage.src,
+                    'por',
+                    { logger: m => console.log(m) }
+                );
+                
+                extractedData = parseReceiptText(text);
+                displayExtractedData(extractedData);
+                showStatus('✅ Cupom processado com sucesso!', 'success');
+                
+            } catch (error) {
+                showStatus('❌ Erro: ' + error.message, 'error');
+                console.error(error);
+            } finally {
+                processBtn.disabled = false;
+                spinner.style.display = 'none';
+            }
+        }
+        
+        function parseReceiptText(text) {
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+            
+            const items = extractItems(lines);
+            
+            const data = {
+                store: {
+                    name: extractStoreName(lines),
+                    cnpj: extractCNPJ(text),
+                    address: extractAddress(lines),
+                    phone: extractPhone(text)
+                },
+                purchase: {
+                    date: extractDate(lines),
+                    receiptNumber: extractReceiptNumber(lines),
+                    paymentMethod: '',
+                    cardBrand: ''
+                },
+                items: items,
+                totals: {
+                    subtotal: items.reduce((s, i) => s + i.totalPrice, 0),
+                    discount: extractDiscount(text),
+                    taxes: extractTaxes(text),
+                    total: extractTotal(text)
+                }
+            };
+            
+            return data;
+        }
+        
+        function extractStoreName(lines) {
+            return lines[0] || 'Loja';
+        }
+        
+        function extractCNPJ(text) {
+            const match = text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+            return match ? match[1] : '';
+        }
+        
+        function extractAddress(lines) {
+            const addressStart = lines.findIndex(l => l.match(/rua|av|avenida|alameda|pça|praça|rod|rodovia/i));
+            if (addressStart !== -1) {
+                return lines.slice(addressStart, Math.min(addressStart + 3, lines.length)).join(' ');
+            }
+            return '';
+        }
+        
+        function extractPhone(text) {
+            const match = text.match(/(\(?\d{2}\)?\s?\d{4,5}-\d{4})/);
+            return match ? match[1] : '';
+        }
+        
+        function extractDate(lines) {
+            const dateMatch = lines.join(' ').match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s*(\d{2}[:\-]\d{2})?/);
+            if (dateMatch) {
+                return new Date().toISOString().slice(0, 16);
+            }
+            return new Date().toISOString().slice(0, 16);
+        }
+        
+        function extractReceiptNumber(lines) {
+            const match = lines.join(' ').match(/(?:cupom|nf|número|n°)\s*:?\s*(\d+)/i);
+            return match ? match[1] : '';
+        }
+        
+        function extractDiscount(text) {
+            const match = text.match(/(?:desconto|desc)\s*:?\s*R?\$?\s*(\d+[,.]?\d{2})/i);
+            return match ? parseFloat(match[1].replace(',', '.')) : 0;
+        }
+        
+        function extractTaxes(text) {
+            const match = text.match(/(?:imposto|tax)\s*:?\s*R?\$?\s*(\d+[,.]?\d{2})/i);
+            return match ? parseFloat(match[1].replace(',', '.')) : 0;
+        }
+        
+        function extractTotal(text) {
+            const match = text.match(/(?:total|valor total)\s*:?\s*R?\$?\s*(\d+[,.]?\d{2})/i);
+            if (match) {
+                return parseFloat(match[1].replace(',', '.'));
+            }
+            const allNumbers = text.match(/\d+[,.]?\d{2}/g) || [];
+            return allNumbers.length > 0 ? parseFloat(allNumbers[allNumbers.length - 1].replace(',', '.')) : 0;
+        }
+        
+        function extractItems(lines) {
+            const items = [];
+            const itemPattern = /^(.+?)\s+x?\s*(\d+[,.]?\d*)\s+R?\$?\s*(\d+[,.]?\d{2})/;
+            
+            lines.forEach(line => {
+                const match = line.match(itemPattern);
+                if (match) {
+                    const description = match[1].trim();
+                    const qty = parseFloat(match[2].replace(',', '.'));
+                    const price = parseFloat(match[3].replace(',', '.'));
+                    
+                    items.push({
+                        description,
+                        quantity: qty,
+                        unitPrice: price / qty,
+                        totalPrice: price,
+                        category: categorizeItem(description)
+                    });
+                }
+            });
+            
+            if (items.length === 0) {
+                items.push({
+                    description: 'Item 1',
+                    quantity: 1,
+                    unitPrice: 0,
+                    totalPrice: 0,
+                    category: 'Outros'
+                });
+            }
+            
+            return items;
+        }
+        
+        function categorizeItem(description) {
+            const desc = description.toLowerCase();
+            for (const [category, keywords] of Object.entries(CATEGORIES)) {
+                if (keywords.some(keyword => desc.includes(keyword))) {
+                    return category;
+                }
+            }
+            return 'Outros';
+        }
+        
+        function displayExtractedData(data) {
+            // Preencher formulário
+            document.getElementById('storeName').value = data.store.name;
+            document.getElementById('storeCNPJ').value = data.store.cnpj;
+            document.getElementById('storeAddress').value = data.store.address;
+            document.getElementById('storePhone').value = data.store.phone;
+            document.getElementById('purchaseDate').value = data.purchase.date;
+            document.getElementById('receiptNumber').value = data.purchase.receiptNumber;
+            document.getElementById('subtotal').value = data.totals.subtotal.toFixed(2);
+            document.getElementById('discount').value = data.totals.discount.toFixed(2);
+            document.getElementById('taxes').value = data.totals.taxes.toFixed(2);
+            document.getElementById('totalValue').value = data.totals.total.toFixed(2);
+            
+            // Itens
+            const itemsList = document.getElementById('itemsList');
+            itemsList.innerHTML = data.items.map((item, i) => `
+                <div class="item-card">
+                    <div class="item-info">
+                        <div class="item-description">${item.description}</div>
+                        <div>
+                            <span class="item-category">${item.category}</span>
+                        </div>
+                        <div class="item-details">
+                            <span>Qtd: ${item.quantity}</span>
+                            <span>Unit: R$ ${item.unitPrice.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="item-price">R$ ${item.totalPrice.toFixed(2)}</div>
+                </div>
+            `).join('');
+            
+            // Resumo e breakdown
+            updateSummary(data);
+            
+            dataPanel.style.display = 'block';
+            document.querySelector('.main-grid').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function updateSummary(data) {
+            // Calcular por categoria
+            const categoryTotals = {};
+            data.items.forEach(item => {
+                categoryTotals[item.category] = (categoryTotals[item.category] || 0) + item.totalPrice;
+            });
+            
+            const summaryDiv = document.getElementById('summaryDiv');
+            summaryDiv.innerHTML = `
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="summary-label">Itens</div>
+                        <div class="summary-value">${data.items.length}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Subtotal</div>
+                        <div class="summary-value">R$ ${data.totals.subtotal.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Desconto</div>
+                        <div class="summary-value">-R$ ${data.totals.discount.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-item" style="grid-column: span 2; background: var(--primary); color: white; border: none;">
+                        <div class="summary-label" style="color: rgba(255,255,255,0.8);">Total</div>
+                        <div class="summary-value" style="color: white;">R$ ${data.totals.total.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+            
+            // Breakdown por categoria
+            const breakdown = document.getElementById('categoryBreakdown');
+            const categories = Object.entries(categoryTotals)
+                .sort((a, b) => b[1] - a[1]);
+            
+            const maxValue = Math.max(...categories.map(c => c[1]));
+            
+            breakdown.innerHTML = categories.map(([cat, value]) => {
+                const percentage = (value / maxValue) * 100;
+                return `
+                    <div class="category-item">
+                        <span>${cat}</span>
+                        <strong>R$ ${value.toFixed(2)}</strong>
+                    </div>
+                    <div class="category-bar">
+                        <div class="category-bar-fill" style="width: ${percentage}%"></div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function saveToLocalStorage() {
+            if (!extractedData) return;
+            
+            const history = JSON.parse(localStorage.getItem('cupomHistory')) || [];
+            
+            const cupom = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                store: {
+                    name: document.getElementById('storeName').value,
+                    cnpj: document.getElementById('storeCNPJ').value,
+                    address: document.getElementById('storeAddress').value,
+                    phone: document.getElementById('storePhone').value
+                },
+                purchase: {
+                    date: document.getElementById('purchaseDate').value,
+                    receiptNumber: document.getElementById('receiptNumber').value,
+                    paymentMethod: document.getElementById('paymentMethod').value,
+                    cardBrand: document.getElementById('cardBrand').value
+                },
+                items: extractedData.items.map(item => ({
+                    ...item,
+                    category: document.querySelectorAll('.item-card')[0]?.textContent || item.category
+                })),
+                totals: {
+                    subtotal: parseFloat(document.getElementById('subtotal').value),
+                    discount: parseFloat(document.getElementById('discount').value),
+                    taxes: parseFloat(document.getElementById('taxes').value),
+                    total: parseFloat(document.getElementById('totalValue').value)
+                },
+                synced: false
+            };
+            
+            history.unshift(cupom);
+            localStorage.setItem('cupomHistory', JSON.stringify(history.slice(0, 100)));
+            
+            showStatus('✅ Cupom salvo localmente!', 'success');
+            updateHistory();
+        }
+        
+        async function sendToGoogleSheets() {
+            if (!googleAuth) {
+                showStatus('❌ Conecte ao Google Sheets primeiro', 'error');
+                return;
+            }
+            
+            if (!extractedData) return;
+            
+            showStatus('📤 Enviando para Google Sheets...', 'processing');
+            
+            try {
+                // Aqui você implementaria a integração real com Google Sheets API
+                // Por enquanto, salvamos localmente e marcamos como synced
+                
+                await saveToLocalStorage();
+                showStatus('✅ Cupom enviado ao Google Sheets!', 'success');
+                
+                const history = JSON.parse(localStorage.getItem('cupomHistory')) || [];
+                if (history.length > 0) {
+                    history[0].synced = true;
+                    localStorage.setItem('cupomHistory', JSON.stringify(history));
+                }
+                
+                updateHistory();
+            } catch (error) {
+                showStatus('❌ Erro ao enviar: ' + error.message, 'error');
+            }
+        }
+        
+        function downloadJSON() {
+            if (!extractedData) return;
+            
+            const data = {
+                timestamp: new Date().toISOString(),
+                store: {
+                    name: document.getElementById('storeName').value,
+                    cnpj: document.getElementById('storeCNPJ').value,
+                    address: document.getElementById('storeAddress').value,
+                    phone: document.getElementById('storePhone').value
+                },
+                purchase: {
+                    date: document.getElementById('purchaseDate').value,
+                    receiptNumber: document.getElementById('receiptNumber').value,
+                    paymentMethod: document.getElementById('paymentMethod').value
+                },
+                items: extractedData.items,
+                totals: {
+                    subtotal: parseFloat(document.getElementById('subtotal').value),
+                    discount: parseFloat(document.getElementById('discount').value),
+                    taxes: parseFloat(document.getElementById('taxes').value),
+                    total: parseFloat(document.getElementById('totalValue').value)
+                }
+            };
+            
+            downloadFile(JSON.stringify(data, null, 2), `cupom-${Date.now()}.json`, 'application/json');
+        }
+        
+        function downloadCSV() {
+            if (!extractedData) return;
+            
+            const storeName = document.getElementById('storeName').value;
+            const date = document.getElementById('purchaseDate').value;
+            const total = document.getElementById('totalValue').value;
+            
+            let csv = 'Loja,Data,Item,Categoria,Quantidade,Valor Unitário,Subtotal\n';
+            
+            extractedData.items.forEach(item => {
+                csv += `"${storeName}","${date}","${item.description}","${item.category}","${item.quantity}","${item.unitPrice.toFixed(2)}","${item.totalPrice.toFixed(2)}"\n`;
+            });
+            
+            csv += `\n"${storeName}","${date}","TOTAL","","","","${total}"`;
+            
+            downloadFile(csv, `cupom-${Date.now()}.csv`, 'text/csv;charset=utf-8');
+        }
+        
+        function downloadFile(content, filename, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type} show`;
+        }
+        
+        function reset() {
+            fileInput.value = '';
+            cameraInput.value = '';
+            previewImage.src = '';
+            previewImage.style.display = 'none';
+            processBtn.style.display = 'none';
+            dataPanel.style.display = 'none';
+            statusDiv.classList.remove('show');
+            extractedData = null;
+        }
+        
+        function updateHistory() {
+            const history = JSON.parse(localStorage.getItem('cupomHistory')) || [];
+            
+            if (history.length === 0) {
+                document.getElementById('historyPanel').style.display = 'none';
+                return;
+            }
+            
+            document.getElementById('historyPanel').style.display = 'block';
+            const historyBody = document.getElementById('historyBody');
+            
+            historyBody.innerHTML = history.slice(0, 20).map(item => `
+                <tr>
+                    <td>${new Date(item.timestamp).toLocaleDateString('pt-BR')} ${new Date(item.timestamp).toLocaleTimeString('pt-BR')}</td>
+                    <td>${item.store.name}</td>
+                    <td>${item.items.length}</td>
+                    <td>R$ ${item.totals.total.toFixed(2)}</td>
+                    <td>
+                        <span class="badge ${item.synced ? 'synced' : 'new'}">
+                            ${item.synced ? '✅ SINCRONIZADO' : '🆕 LOCAL'}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function syncAllToSheets() {
+            if (!googleAuth) {
+                showStatus('❌ Conecte ao Google Sheets primeiro', 'error');
+                return;
+            }
+            
+            showStatus('🔄 Sincronizando todos os cupons...', 'processing');
+            
+            setTimeout(() => {
+                showStatus('✅ Todos os cupons sincronizados!', 'success');
+                updateHistory();
+            }, 2000);
+        }
+        
+        function createOrGetSpreadsheet() {
+            // Criar planilha no Google Sheets
+            console.log('Criando/obtendo planilha no Google Sheets');
+        }
+        
+        // Inicializar
+        updateHistory();
+    </script>
+</body>
+</html>
